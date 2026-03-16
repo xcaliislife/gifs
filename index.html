@@ -2,35 +2,32 @@
 <html lang="es">
 <head>
     <link rel="manifest" href="manifest.json">
-<meta name="theme-color" content="#0f172a">
-
-<script>
-  // Este código registra el Service Worker que permite usar FFmpeg (MP4) en GitHub
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js')
-        .then(reg => console.log('SW registrado', reg))
-        .catch(err => console.log('Error al registrar SW', err));
-    });
-  }
-</script>
-
+    <meta name="theme-color" content="#0f172a">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GIF to Video Converter - Modern Edition</title>
+    <title>GIF to Video Converter Pro</title>
+
+    <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('./sw.js');
+        });
+      }
+    </script>
+
     <style>
-        /* --- CSS Moderno y Elegante --- */
-        
         :root {
-            --primary-color: #4a90e2; /* Azul principal */
-            --primary-hover: #357abd; /* Azul al pasar el mouse */
-            --bg-color: #f4f7f6; /* Fondo gris muy claro */
-            --panel-bg: #ffffff; /* Fondo del panel blanco */
-            --text-color: #333333; /* Texto principal */
-            --text-muted: #777777; /* Texto secundario */
-            --border-radius: 12px;
-            --box-shadow: 0 8px 30px rgba(0,0,0,0.1); /* Sombra suave */
-            --font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            --primary-color: #6366f1;
+            --primary-hover: #4f46e5;
+            --bg-color: #0f172a;
+            --panel-bg: #1e293b;
+            --text-color: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-radius: 16px;
+            --box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+            --font-family: 'Segoe UI', system-ui, sans-serif;
         }
 
         body {
@@ -51,169 +48,92 @@
             border-radius: var(--border-radius);
             box-shadow: var(--box-shadow);
             width: 100%;
-            max-width: 650px; /* Ancho máximo para el panel */
+            max-width: 550px;
             text-align: center;
         }
 
-        h2 {
-            margin-top: 0;
-            color: var(--primary-color);
-            font-weight: 700;
-            font-size: 2.2em;
-        }
-
-        .subtitle {
-            color: var(--text-muted);
-            margin-bottom: 30px;
-            font-size: 1.1em;
-        }
+        h2 { margin: 0; color: white; font-size: 2em; }
+        .subtitle { color: var(--text-muted); margin-bottom: 25px; }
 
         .controls-wrapper {
-            background-color: #fafbfc;
+            background-color: #334155;
             padding: 25px;
             border-radius: var(--border-radius);
-            border: 1px solid #e1e8ed;
-            margin-bottom: 30px;
+            margin-bottom: 25px;
             display: flex;
             flex-direction: column;
-            gap: 20px;
-            align-items: center;
+            gap: 15px;
         }
 
-        /* Estilo para el input de archivo personalizado */
+        /* Selector de formato */
+        .format-selector {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            background: #0f172a;
+            padding: 5px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+        }
+
+        .format-option { flex: 1; }
+        .format-option input { display: none; }
+        .format-option label {
+            display: block;
+            padding: 10px;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: 0.3s;
+            font-weight: 600;
+            color: var(--text-muted);
+        }
+
+        .format-option input:checked + label {
+            background: var(--primary-color);
+            color: white;
+        }
+
         .file-input-label {
             display: inline-flex;
             align-items: center;
-            padding: 12px 24px;
-            background-color: #e8f0fe;
-            color: var(--primary-color);
-            border-radius: 30px;
+            justify-content: center;
+            padding: 12px;
+            background-color: #475569;
+            border-radius: 10px;
             cursor: pointer;
             font-weight: 600;
-            transition: background-color 0.3s ease, transform 0.1s ease;
-            font-size: 0.95em;
         }
 
-        .file-input-label:hover {
-            background-color: #d2e3fc;
-        }
-        
-        .file-input-label i { /* Ícono */
-            margin-right: 10px;
-            font-size: 1.1em;
-        }
-
-        #fileInput {
-            display: none; /* Ocultar el input original feo */
-        }
+        #fileInput { display: none; }
 
         .convert-btn {
             background-color: var(--primary-color);
             color: white;
             border: none;
-            padding: 14px 28px;
-            border-radius: 30px;
+            padding: 15px;
+            border-radius: 12px;
             cursor: pointer;
             font-size: 1.1em;
-            font-weight: 600;
-            transition: background-color 0.3s ease, transform 0.1s ease, box-shadow 0.3s ease;
-            display: inline-flex;
-            align-items: center;
+            font-weight: 700;
+            transition: 0.3s;
         }
 
-        .convert-btn:hover:not(:disabled) {
-            background-color: var(--primary-hover);
-            box-shadow: 0 4px 15px rgba(74, 144, 226, 0.3);
-        }
-        
-        .convert-btn:active:not(:disabled) {
-            transform: translateY(1px);
-        }
-
-        .convert-btn:disabled {
-            background-color: #bdc3c7;
-            cursor: not-allowed;
-            color: #ffffff;
-        }
-        
-        .convert-btn i {
-            margin-right: 12px;
-            font-size: 1.2em;
-        }
+        .convert-btn:disabled { background-color: #475569; opacity: 0.6; }
 
         #status {
-            font-weight: 600;
-            padding: 15px 25px;
-            background-color: #f1f3f4;
-            color: var(--text-color);
+            font-size: 0.9em;
+            padding: 12px;
+            background: #0f172a;
             border-radius: 8px;
-            display: inline-block;
-            margin: 10px 0;
-            font-size: 0.95em;
-            border: 1px solid #d1d9e0;
-        }
-        
-        #status.success {
-            background-color: #e6fffa;
-            color: #2c7a7b;
-            border-color: #b2f5ea;
-        }
-        
-        #status.processing {
-            background-color: #fffaf0;
-            color: #c05621;
-            border-color: #feebc8;
-        }
-        
-        #status.error {
-            background-color: #fff5f5;
-            color: #c53030;
-            border-color: #fed7d7;
-        }
-
-        .canvas-container {
-            position: relative;
-            margin-top: 25px;
-            display: flex;
-            justify-content: center;
-            border-radius: var(--border-radius);
-            overflow: hidden; /* Para que el canvas respete los bordes redondeados */
-            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+            color: var(--text-muted);
         }
 
         canvas {
-            border: 2px solid var(--primary-color);
-            display: block;
-            max-width: 100%;
-            height: auto;
-            border-radius: var(--border-radius);
-        }
-        
-        .instrucciones {
-            font-size: 0.9em;
-            color: #888;
-            margin-top: -10px;
-            margin-bottom: 25px;
-        }
-
-        /* Responsive para pantallas muy pequeñas */
-        @media (max-width: 500px) {
-            .container {
-                padding: 25px;
-            }
-            
-            h2 {
-                font-size: 1.8em;
-            }
-            
-            .controls-wrapper {
-                padding: 15px;
-            }
-            
-            .convert-btn, .file-input-label {
-                width: 100%;
-                justify-content: center;
-            }
+            width: 100%;
+            border-radius: 12px;
+            border: 2px solid #334155;
+            display: none;
         }
     </style>
     <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
@@ -221,31 +141,40 @@
 <body>
 
     <div class="container">
-        <h2>GIF to Video</h2>
-        <p class="subtitle">Convierte tus GIFs animados en archivos de video WebM.</p>
-        <p class="instrucciones"><em>Funciona mejor en Chrome y Edge. Graba un solo ciclo automáticamente.</em></p>
+        <h2>GIF to Video Pro</h2>
+        <p class="subtitle">Convierte a WebM o MP4 de forma profesional</p>
         
         <div class="controls-wrapper">
             <label for="fileInput" class="file-input-label">
-                <i class='bx bx-cloud-upload'></i>
+                <i class='bx bx-upload' style="margin-right: 8px;"></i>
                 <span id="fileInputLabelText">Seleccionar GIF</span>
             </label>
             <input type="file" id="fileInput" accept="image/gif">
+
+            <div class="format-selector">
+                <div class="format-option">
+                    <input type="radio" name="format" id="webm" value="webm" checked>
+                    <label for="webm">WebM</label>
+                </div>
+                <div class="format-option">
+                    <input type="radio" name="format" id="mp4" value="mp4">
+                    <label for="mp4">MP4 (H.264)</label>
+                </div>
+            </div>
             
             <button id="convertBtn" class="convert-btn" disabled>
-                <i class='bx bx-play-circle'></i>
-                <span>Convertir Automáticamente</span>
+                Convertir Ahora
             </button>
         </div>
 
-        <div id="status">Esperando GIF...</div>
-        
-        <div class="canvas-container">
-            <canvas id="canvas"></canvas>
-        </div>
+        <div id="status">Cargando motores de video...</div>
+        <canvas id="canvas"></canvas>
     </div>
 
     <script>
+        const { createFFmpeg, fetchFile } = FFmpeg;
+        const ffmpeg = createFFmpeg({ log: false });
+        
         const fileInput = document.getElementById('fileInput');
         const fileInputLabelText = document.getElementById('fileInputLabelText');
         const convertBtn = document.getElementById('convertBtn');
@@ -254,104 +183,98 @@
         const ctx = canvas.getContext('2d');
 
         let decoder;
-        let mediaRecorder;
-        let recordedChunks = [];
+
+        // Cargar FFmpeg inmediatamente
+        (async () => {
+            try {
+                await ffmpeg.load();
+                status.innerText = "🚀 Listo para convertir.";
+            } catch (e) {
+                status.innerText = "⚠️ Error de seguridad. Refresca la página.";
+                console.error(e);
+            }
+        })();
 
         fileInput.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (!file) return;
 
-            // Actualizar el texto del label con el nombre del archivo
             fileInputLabelText.innerText = file.name;
-            
-            status.innerText = "Cargando archivo...";
-            status.className = ''; // Resetear clases de estado
-            const arrayBuffer = await file.arrayBuffer();
+            status.innerText = "Leyendo GIF...";
             
             try {
+                const arrayBuffer = await file.arrayBuffer();
                 decoder = new ImageDecoder({ data: arrayBuffer, type: 'image/gif' });
                 await decoder.tracks.ready;
                 
-                // Preparamos el canvas con el primer frame
                 const frame = await decoder.decode({ frameIndex: 0 });
                 canvas.width = frame.image.displayWidth;
                 canvas.height = frame.image.displayHeight;
+                canvas.style.display = 'block';
                 ctx.drawImage(frame.image, 0, 0);
 
                 convertBtn.disabled = false;
                 status.innerText = `✅ GIF listo (${decoder.tracks[0].frameCount} cuadros).`;
-                status.classList.add('success');
             } catch (err) {
-                status.innerText = "❌ Error al procesar. Usa Chrome/Edge.";
-                status.classList.add('error');
-                console.error(err);
+                status.innerText = "❌ Error al cargar. Usa Chrome o Edge.";
             }
         });
 
         convertBtn.addEventListener('click', async () => {
-            if (!decoder) return;
-            
             convertBtn.disabled = true;
-            recordedChunks = [];
+            const format = document.querySelector('input[name="format"]:checked').value;
             const frameCount = decoder.tracks[0].frameCount;
-            
-            // Capturar stream a 30fps
-            const stream = canvas.captureStream(30);
-            
-            // Intentar WebM VP9, si no WebM por defecto
-            let options = { mimeType: 'video/webm;codecs=vp9' };
-            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                options = { mimeType: 'video/webm' };
-            }
-            
-            mediaRecorder = new MediaRecorder(stream, options);
+            const chunks = [];
 
-            mediaRecorder.ondataavailable = (e) => {
-                if (e.data.size > 0) recordedChunks.push(e.data);
-            };
+            // 1. Grabar a WebM (Buffer temporal)
+            const stream = canvas.captureStream(30);
+            const recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+
+            recorder.ondataavailable = e => chunks.push(e.data);
             
-            mediaRecorder.onstop = () => {
-                const blob = new Blob(recordedChunks, { type: 'video/webm' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = "animacion_convertida.webm";
-                a.click();
-                status.innerText = "🎉 ¡Conversión completa! Archivo descargado.";
-                status.classList.add('success');
+            recorder.onstop = async () => {
+                const webmBlob = new Blob(chunks, { type: 'video/webm' });
+
+                if (format === 'mp4') {
+                    status.innerText = "⚙️ Procesando MP4... (No cierres la app)";
+                    const name = 'input.webm';
+                    ffmpeg.FS('writeFile', name, await fetchFile(webmBlob));
+                    
+                    // Conversión FFmpeg
+                    await ffmpeg.run('-i', name, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', 'output.mp4');
+                    
+                    const data = ffmpeg.FS('readFile', 'output.mp4');
+                    download(new Blob([data.buffer], { type: 'video/mp4' }), "video.mp4");
+                } else {
+                    download(webmBlob, "video.webm");
+                }
+                
+                status.innerText = "🎉 ¡Conversión exitosa!";
                 convertBtn.disabled = false;
             };
 
-            // Iniciamos grabación
-            mediaRecorder.start();
-            status.innerText = "🔴 Procesando cuadros...";
-            status.classList.remove('success', 'error');
-            status.classList.add('processing');
+            recorder.start();
+            status.innerText = "🔴 Capturando cuadros...";
 
-            // Ciclo automático: recorre cada frame exactamente una vez
             for (let i = 0; i < frameCount; i++) {
-                try {
-                    const result = await decoder.decode({ frameIndex: i });
-                    
-                    // Limpiar y dibujar con fondo blanco para transparencia
-                    ctx.fillStyle = "white";
-                    ctx.fillRect(0, 0, canvas.width, canvas.height);
-                    ctx.drawImage(result.image, 0, 0);
-                    
-                    // Esperar el tiempo real del frame antes de pasar al siguiente
-                    const duration = (result.image.duration / 1000) || 100; // ms, fallback 100ms
-                    await new Promise(resolve => setTimeout(resolve, duration));
-                } catch (frameError) {
-                    console.error(`Error en frame ${i}:`, frameError);
-                    // Podrías decidir saltar el frame o detenerte aquí
-                }
+                const result = await decoder.decode({ frameIndex: i });
+                ctx.fillStyle = "white";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(result.image, 0, 0);
+                const duration = (result.image.duration / 1000) || 100;
+                await new Promise(r => setTimeout(r, duration));
             }
 
-            // Al terminar el último frame, cerramos la grabación
-            if(mediaRecorder.state === "recording") {
-                mediaRecorder.stop();
-            }
+            recorder.stop();
         });
+
+        function download(blob, filename) {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+        }
     </script>
 </body>
 </html>
