@@ -17,7 +17,6 @@
       }
     </script>
 
-    
     <style>
         :root {
             --primary-color: #6366f1;
@@ -66,7 +65,6 @@
             gap: 15px;
         }
 
-        /* Selector de formato */
         .format-selector {
             display: flex;
             justify-content: center;
@@ -185,7 +183,6 @@
 
         let decoder;
 
-        // Cargar FFmpeg inmediatamente
         (async () => {
             try {
                 await ffmpeg.load();
@@ -221,13 +218,25 @@
             }
         });
 
+        const downloadFile = (blob, filename) => {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            setTimeout(() => {
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }, 2000);
+        };
+
         convertBtn.addEventListener('click', async () => {
             convertBtn.disabled = true;
             const format = document.querySelector('input[name="format"]:checked').value;
             const frameCount = decoder.tracks[0].frameCount;
             const chunks = [];
 
-            // 1. Grabar a WebM (Buffer temporal)
             const stream = canvas.captureStream(30);
             const recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
 
@@ -237,17 +246,23 @@
                 const webmBlob = new Blob(chunks, { type: 'video/webm' });
 
                 if (format === 'mp4') {
-                    status.innerText = "⚙️ Procesando MP4... (No cierres la app)";
+                    status.innerText = "⚙️ Procesando MP4 compatible... (No cierres)";
                     const name = 'input.webm';
                     ffmpeg.FS('writeFile', name, await fetchFile(webmBlob));
                     
-                    // Conversión FFmpeg
-                    await ffmpeg.run('-i', name, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', 'output.mp4');
+                    // Mejoras técnicas: dimensiones pares y codec universal
+                    await ffmpeg.run(
+                        '-i', name, 
+                        '-vf', 'pad=ceil(iw/2)*2:ceil(ih/2)*2', 
+                        '-c:v', 'libx264', 
+                        '-pix_fmt', 'yuv420p', 
+                        'output.mp4'
+                    );
                     
                     const data = ffmpeg.FS('readFile', 'output.mp4');
-                    download(new Blob([data.buffer], { type: 'video/mp4' }), "video.mp4");
+                    downloadFile(new Blob([data.buffer], { type: 'video/mp4' }), `video-${Date.now()}.mp4`);
                 } else {
-                    download(webmBlob, "video.webm");
+                    downloadFile(webmBlob, `video-${Date.now()}.webm`);
                 }
                 
                 status.innerText = "🎉 ¡Conversión exitosa!";
@@ -266,30 +281,8 @@
                 await new Promise(r => setTimeout(r, duration));
             }
 
-
             recorder.stop();
         });
-
-    }
-const data = await ffmpeg.readFile('output.mp4');
-
-// Crear el enlace de descarga de forma segura
-const url = URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
-const a = document.createElement('a');
-a.href = url;
-a.download = 'video-convertido.mp4';
-document.body.appendChild(a);
-a.click();
-
-// IMPORTANTE: Limpiar la memoria después de 1 segundo
-setTimeout(() => {
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-}, 1000);
-
-        
-       
     </script>
-    
 </body>
 </html>
