@@ -1,0 +1,44 @@
+name: Deploy PWA Optimized
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true # Cambiado a true para que si haces dos commits rápidos, el último tenga prioridad
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # PASO NUEVO: Actualiza la versión del SW para forzar la actualización en el celular
+      - name: Update Service Worker Version
+        run: |
+          sed -i "s/v1/v${{ github.run_number }}/g" sw.js
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Aquí podrías especificar una carpeta si decides organizar tu repo
+          path: '.'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+        
