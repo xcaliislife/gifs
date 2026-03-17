@@ -266,6 +266,33 @@
                 await new Promise(r => setTimeout(r, duration));
             }
 
+
+// Añade esto para asegurar dimensiones pares (evita errores de codec)
+await ffmpeg.run(
+  '-i', 'input.gif',
+  '-vf', 'pad=ceil(iw/2)*2:ceil(ih/2)*2', // Truco técnico: fuerza ancho y alto par
+  '-pix_fmt', 'yuv420p',                // Formato de color compatible con todo
+  '-movflags', '+faststart',             // Optimiza para descarga inmediata
+  'output.mp4'
+);
+
+const data = await ffmpeg.readFile('output.mp4');
+
+// Crear el enlace de descarga de forma segura
+const url = URL.createObjectURL(new Blob([data.buffer], { type: 'video/mp4' }));
+const a = document.createElement('a');
+a.href = url;
+a.download = 'video-convertido.mp4';
+document.body.appendChild(a);
+a.click();
+
+// IMPORTANTE: Limpiar la memoria después de 1 segundo
+setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}, 1000);
+
+
             recorder.stop();
         });
 
@@ -277,6 +304,6 @@
             a.click();
         }
     </script>
-    ``
+    
 </body>
 </html>
