@@ -186,9 +186,9 @@
         (async () => {
             try {
                 await ffmpeg.load();
-                status.innerText = "🚀 Listo para convertir.";
+                status.innerText = "Listo para convertir.";
             } catch (e) {
-                status.innerText = "⚠️ Error de seguridad. Refresca la página.";
+                status.innerText = "Error de seguridad. Refresca la página.";
                 console.error(e);
             }
         })();
@@ -212,9 +212,9 @@
                 ctx.drawImage(frame.image, 0, 0);
 
                 convertBtn.disabled = false;
-                status.innerText = `✅ GIF listo (${decoder.tracks[0].frameCount} cuadros).`;
+                status.innerText = `GIF listo (${decoder.tracks[0].frameCount} cuadros).`;
             } catch (err) {
-                status.innerText = "❌ Error al cargar. Usa Chrome o Edge.";
+                status.innerText = "Error al cargar. Usa Chrome o Edge.";
             }
         });
 
@@ -246,7 +246,7 @@
                 const webmBlob = new Blob(chunks, { type: 'video/webm' });
 
                 if (format === 'mp4') {
-                    status.innerText = "⚙️ Procesando MP4 compatible... (No cierres)";
+                    status.innerText = "Procesando MP4 compatible... (No cierres)";
                     const name = 'input.webm';
                     ffmpeg.FS('writeFile', name, await fetchFile(webmBlob));
                     
@@ -265,12 +265,12 @@
                     downloadFile(webmBlob, `video-${Date.now()}.webm`);
                 }
                 
-                status.innerText = "🎉 ¡Conversión exitosa!";
+                status.innerText = "¡Conversión exitosa!";
                 convertBtn.disabled = false;
             };
 
             recorder.start();
-            status.innerText = "🔴 Capturando cuadros...";
+            status.innerText = "Capturando cuadros...";
 
             for (let i = 0; i < frameCount; i++) {
                 const result = await decoder.decode({ frameIndex: i });
