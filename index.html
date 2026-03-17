@@ -267,15 +267,10 @@
             }
 
 
-// Añade esto para asegurar dimensiones pares (evita errores de codec)
-await ffmpeg.run(
-  '-i', 'input.gif',
-  '-vf', 'pad=ceil(iw/2)*2:ceil(ih/2)*2', // Truco técnico: fuerza ancho y alto par
-  '-pix_fmt', 'yuv420p',                // Formato de color compatible con todo
-  '-movflags', '+faststart',             // Optimiza para descarga inmediata
-  'output.mp4'
-);
+            recorder.stop();
+        });
 
+    }
 const data = await ffmpeg.readFile('output.mp4');
 
 // Crear el enlace de descarga de forma segura
@@ -292,17 +287,8 @@ setTimeout(() => {
     URL.revokeObjectURL(url);
 }, 1000);
 
-
-            recorder.stop();
-        });
-
-        function download(blob, filename) {
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            a.click();
-        }
+        
+       
     </script>
     
 </body>
