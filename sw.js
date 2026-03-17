@@ -6,20 +6,29 @@ const ASSETS = [
   './icon-192.png',
   './icon-512.png'
 ];
-``
+
 // Instalación y cacheo
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS)));
+  self.skipWaiting(); // Fuerza al SW a activarse sin esperar
+  e.waitUntil(
+    caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS))
+  );
 });
 
-// Interceptar peticiones para habilitar COOP y COEP (Necesario para MP4/FFmpeg)
+self.addEventListener('activate', (event) => {
+  event.waitUntil(clients.claim()); // Toma el control de las pestañas abiertas inmediatamente
+});
+
+// Interceptar peticiones para habilitar COOP y COEP
 self.addEventListener('fetch', (event) => {
-  if (event.request.cache === 'only-if-cached' && event.request.mode !== 'same-origin') return;
+  // Evitar errores con extensiones de navegador y peticiones chrome-extension
+  if (!event.request.url.startsWith('http')) return;
 
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        // Clonamos la respuesta para añadir los headers de seguridad
+        if (response.status === 0) return response; // Para peticiones opacas
+
         const newHeaders = new Headers(response.headers);
         newHeaders.set("Cross-Origin-Embedder-Policy", "require-corp");
         newHeaders.set("Cross-Origin-Opener-Policy", "same-origin");
