@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0f172a">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Convertidor GIF ⇄ Video</title>
+
+    <!-- Solo muxers livianos (WebCodecs hace la codificación). Ya no hace falta ffmpeg.wasm -->
+    <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5/build/mp4-muxer.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/webm-muxer@5/build/webm-muxer.js" defer></script>
+
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('./sw.js').catch(() => {});
+        });
+      }
+    </script>
+
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-hover: #4f46e5;
+            --bg: #0f172a;
+            --panel: #1e293b;
+            --panel-2: #334155;
+            --text: #f8fafc;
+            --muted: #94a3b8;
+            --danger: #f87171;
+            --radius: 16px;
+            --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+        }
+        * { box-sizing: border-box; }
+        [hidden] { display: none !important; }
+
+        body {
+            font-family: var(--font);
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 20px 16px 40px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .app {
+            width: 100%;
+            max-width: 560px;
+            background: var(--panel);
+            border-radius: var(--radius);
+            box-shadow: 0 20px 25px -5px rgba(0,0,0,.3);
+            padding: 28px 22px;
+        }
+
+        h1 { margin: 0; font-size: 1.7rem; letter-spacing: -.01em; text-align: center; }
+        .subtitle { color: var(--muted); margin: 6px 0 22px; text-align: center; font-size: .95rem; }
+
+        /* Pestañas de modo */
+        .tabs {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+            background: var(--bg); padding: 5px; border-radius: 12px; margin-bottom: 18px;
+        }
+        .tabs button {
+            border: 0; background: transparent; color: var(--muted);
+            font: inherit; font-weight: 700; padding: 11px 8px; border-radius: 9px; cursor: pointer;
+            transition: background .2s, color .2s;
+        }
+        .tabs button[aria-selected="true"] { background: var(--primary); color: #fff; }
+        .tabs button:focus-visible, .go:focus-visible, .drop:focus-within { outline: 2px solid #a5b4fc; outline-offset: 2px; }
+
+        /* Zona de carga */
+        .drop {
+            display: flex; flex-direction: column; align-items: center; gap: 4px;
+            border: 2px dashed #475569; border-radius: 14px; padding: 22px 14px;
+            text-align: center; cursor: pointer; transition: border-color .2s, background .2s;
+        }
+        .drop:hover, .drop.over { border-color: var(--primary); background: rgba(99,102,241,.08); }
+        .drop input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+        .drop svg { width: 30px; height: 30px; color: var(--muted); margin-bottom: 4px; }
+        .drop b { font-size: 1rem; word-break: break-all; }
+        .drop span { color: var(--muted); font-size: .85rem; }
+
+        /* Vista previa */
+        .preview { margin-top: 14px; border-radius: 12px; overflow: hidden; background: #0b1220; display: flex; justify-content: center; }
+        .preview img, .preview video, .media img, .media video { display: block; max-width: 100%; max-height: 340px; }
+        .fileinfo { margin: 8px 2px 0; color: var(--muted); font-size: .85rem; text-align: center; }
+
+        /* Ajustes */
+        .opts { background: var(--panel-2); border-radius: 14px; padding: 16px; margin-top: 16px; display: flex; flex-direction: column; gap: 14px; }
+        .row { display: flex; flex-direction: column; gap: 7px; }
+        .lbl { font-size: .8rem; color: #cbd5e1; font-weight: 600; }
+        .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+        .chips label { position: relative; }
+        .chips input { position: absolute; opacity: 0; pointer-events: none; }
+        .chips span {
+            display: block; padding: 8px 14px; border-radius: 10px; background: var(--bg);
+            color: var(--muted); font-weight: 600; font-size: .9rem; cursor: pointer; transition: background .2s, color .2s;
+        }
+        .chips input:checked + span { background: var(--primary); color: #fff; }
+        .chips input:focus-visible + span { outline: 2px solid #a5b4fc; }
+
+        .inline { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .inline label { display: flex; align-items: center; gap: 8px; font-size: .9rem; color: #e2e8f0; cursor: pointer; }
+        input[type="number"] {
+            width: 84px; padding: 8px 10px; border-radius: 9px; border: 1px solid #475569;
+            background: var(--bg); color: var(--text); font: inherit;
+        }
+        input[type="color"] { width: 38px; height: 30px; padding: 0; border: 1px solid #475569; border-radius: 8px; background: none; cursor: pointer; }
+        input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--primary); }
+
+        .hint { margin: 2px 2px 0; text-align: center; color: var(--muted); font-size: .85rem; min-height: 1.2em; }
+
+        /* Botón principal */
+        .go {
+            display: block; width: 100%; margin-top: 14px; padding: 15px; border: 0; border-radius: 12px;
+            background: var(--primary); color: #fff; font: inherit; font-size: 1.05rem; font-weight: 700;
+            text-align: center; text-decoration: none; cursor: pointer; transition: background .2s;
+        }
+        .go:hover:not(:disabled) { background: var(--primary-hover); }
+        .go:disabled { background: #475569; opacity: .6; cursor: not-allowed; }
+        .go.stop { background: #475569; }
+        .go.ok { background: #16a34a; }
+        .go.ok:hover { background: #15803d; }
+
+        .progress { height: 6px; background: var(--bg); border-radius: 99px; overflow: hidden; margin-top: 14px; }
+        .progress div { height: 100%; width: 0; background: var(--primary); transition: width .15s linear; }
+
+        #status { margin: 12px 0 0; min-height: 1.3em; text-align: center; font-size: .9rem; color: var(--muted); }
+        #status.err { color: var(--danger); }
+
+        #result { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--panel-2); }
+        .media { display: flex; justify-content: center; background: #0b1220; border-radius: 12px; overflow: hidden; }
+        #stats { margin: 10px 0 0; text-align: center; color: var(--muted); font-size: .85rem; }
+
+        footer { margin-top: 22px; text-align: center; color: #64748b; font-size: .8rem; }
+    </style>
+</head>
+<body>
+<main class="app">
+    <h1>Convertidor GIF ⇄ Video</h1>
+    <p class="subtitle">Rápido, sin subir nada y sin perder calidad</p>
+
+    <div class="tabs" role="tablist">
+        <button role="tab" id="tab-g2v" aria-selected="true">GIF → Video</button>
+        <button role="tab" id="tab-v2g" aria-selected="false">Video → GIF</button>
+    </div>
+
+    <label class="drop" id="drop">
+        <input type="file" id="fileInput" accept="image/gif">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4m0 0L7 9m5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+        <b id="dropTitle">Elegir GIF</b>
+        <span id="dropHint">o arrástralo aquí</span>
+    </label>
+
+    <div class="preview" id="preview" hidden></div>
+    <p class="fileinfo" id="fileinfo" hidden></p>
+
+    <!-- Ajustes GIF → Video -->
+    <section class="opts" id="opts-g2v">
+        <div class="row">
+            <span class="lbl">Formato</span>
+            <div class="chips">
+                <label><input type="radio" name="fmt" value="mp4" checked><span>MP4 (H.264)</span></label>
+                <label><input type="radio" name="fmt" value="webm"><span>WebM (VP9)</span></label>
+            </div>
+        </div>
+        <div class="row">
+            <span class="lbl">Cuadros por segundo</span>
+            <div class="chips">
+                <label><input type="radio" name="fps" value="60" checked><span>60</span></label>
+                <label><input type="radio" name="fps" value="30"><span>30</span></label>
+                <label><input type="radio" name="fps" value="24"><span>24</span></label>
+            </div>
+        </div>
+        <div class="row">
+            <span class="lbl">Tamaño</span>
+            <div class="chips">
+                <label><input type="radio" name="scale" value="1" checked><span>Original</span></label>
+                <label><input type="radio" name="scale" value="2"><span>2×</span></label>
+                <label><input type="radio" name="scale" value="3"><span>3×</span></label>
+                <label><input type="radio" name="scale" value="4"><span>4×</span></label>
+            </div>
+        </div>
+        <div class="row">
+            <span class="lbl">Repeticiones</span>
+            <div class="chips">
+                <label><input type="radio" name="loops" value="1" checked><span>1</span></label>
+                <label><input type="radio" name="loops" value="2"><span>2</span></label>
+                <label><input type="radio" name="loops" value="3"><span>3</span></label>
+                <label><input type="radio" name="loops" value="5"><span>5</span></label>
+            </div>
+        </div>
+        <div class="inline">
+            <label>Fondo (transparencias) <input type="color" id="bg" value="#ffffff"></label>
+            <label><input type="checkbox" id="crisp"> Píxeles nítidos</label>
+        </div>
+    </section>
+
+    <!-- Ajustes Video → GIF -->
+    <section class="opts" id="opts-v2g" hidden>
+        <div class="row">
+            <span class="lbl">Cuadros por segundo</span>
+            <div class="chips">
+                <label><input type="radio" name="gfps" value="50"><span>50</span></label>
+                <label><input type="radio" name="gfps" value="30" checked><span>30</span></label>
+                <label><input type="radio" name="gfps" value="24"><span>24</span></label>
+                <label><input type="radio" name="gfps" value="15"><span>15</span></label>
+            </div>
+        </div>
+        <div class="row">
+            <span class="lbl">Ancho</span>
+            <div class="chips">
+                <label><input type="radio" name="gw" value="orig"><span>Original</span></label>
+                <label><input type="radio" name="gw" value="1080"><span>1080</span></label>
+                <label><input type="radio" name="gw" value="720" checked><span>720</span></label>
+                <label><input type="radio" name="gw" value="480"><span>480</span></label>
+            </div>
+        </div>
+        <div class="row">
+            <span class="lbl">Fragmento (segundos)</span>
+            <div class="inline">
+                <label>Desde <input type="number" id="from" min="0" step="0.1" value="0"></label>
+                <label>Hasta <input type="number" id="to" min="0" step="0.1" value="10"></label>
+            </div>
+        </div>
+        <div class="inline">
+            <label><input type="checkbox" id="dither" checked> Suavizar degradados (dithering)</label>
+        </div>
+    </section>
+
+    <p class="hint" id="hint"></p>
+    <button class="go" id="go" disabled>Convertir</button>
+    <div class="progress" id="progress" hidden><div id="bar"></div></div>
+    <p id="status" role="status"></p>
+
+    <section id="result" hidden>
+        <div class="media" id="media"></div>
+        <p id="stats"></p>
+        <a class="go ok" id="dl" download>Descargar</a>
+    </section>
+
+    <footer>Todo se procesa en tu dispositivo. Funciona mejor en Chrome o Edge.</footer>
+</main>
+
+<script>
+/* ==CORE_START== (sin DOM: cuantización, LZW y escritor de GIF) */
+
+// Matriz Bayer 8x8 para dithering ordenado (estable entre cuadros, no "titila")
+const B8 = [0,32,8,40,2,34,10,42,48,16,56,24,50,18,58,26,12,44,4,36,14,46,6,38,60,28,52,20,62,30,54,22,
+            3,35,11,43,1,33,9,41,51,19,59,27,49,17,57,25,15,47,7,39,13,45,5,37,63,31,55,23,61,29,53,21];
+const DITHER_AMP = 16;
+const BAY = Int8Array.from(B8, m => Math.round((m + 0.5) / 64 * DITHER_AMP - DITHER_AMP / 2));
+
+// Median cut sobre histograma RGB565 -> paleta de hasta K colores
+function medianCut(hist, sr, sg, sb, K) {
+    const all = [];
+    for (let i = 0; i < 65536; i++) if (hist[i]) all.push(i);
+    if (!all.length) return [[0, 0, 0]];
+    const mk = arr => {
+        let rmin = 31, rmax = 0, gmin = 63, gmax = 0, bmin = 31, bmax = 0, cnt = 0;
+        for (const i of arr) {
+            const r = i >> 11, g = (i >> 5) & 63, b = i & 31;
+            if (r < rmin) rmin = r; if (r > rmax) rmax = r;
+            if (g < gmin) gmin = g; if (g > gmax) gmax = g;
+            if (b < bmin) bmin = b; if (b > bmax) bmax = b;
+            cnt += hist[i];
+        }
+        const rr = (rmax - rmin) * 8, gg = (gmax - gmin) * 4, bb = (bmax - bmin) * 8;
+        return { arr, cnt, range: Math.max(rr, gg, bb), ch: rr >= gg && rr >= bb ? 0 : gg >= bb ? 1 : 2 };
+    };
+    const boxes = [mk(all)];
+    while (boxes.length < K) {
+        let bi = -1, bs = 0;
+        for (let j = 0; j < boxes.length; j++) {
+            const b = boxes[j];
+            if (b.arr.length < 2) continue;
+            const s = b.range * Math.sqrt(b.cnt);
+            if (s > bs) { bs = s; bi = j; }
+        }
+        if (bi < 0) break;
+        const b = boxes[bi];
+        const key = b.ch === 0 ? (i => i >> 11) : b.ch === 1 ? (i => (i >> 5) & 63) : (i => i & 31);
+        b.arr.sort((a, c) => key(a) - key(c));
+        const half = b.cnt / 2, len = b.arr.length;
+        let acc = 0, m = 0;
+        while (m < len - 1) { acc += hist[b.arr[m]]; m++; if (acc >= half) break; }
+        boxes.splice(bi, 1, mk(b.arr.slice(0, m)), mk(b.arr.slice(m)));
+    }
+    return boxes.map(b => {
+        let n = 0, r = 0, g = 0, bl = 0;
+        for (const i of b.arr) { n += hist[i]; r += sr[i]; g += sg[i]; bl += sb[i]; }
+        return [Math.round(r / n), Math.round(g / n), Math.round(bl / n)];
+    });
+}
+
+// Tabla RGB565 -> índice de paleta más cercano
+function buildLut(pal) {
+    const lut = new Uint8Array(65536), n = pal.length;
+    for (let i = 0; i < 65536; i++) {
+        const r5 = i >> 11, g6 = (i >> 5) & 63, b5 = i & 31;
+        const r = (r5 << 3) | (r5 >> 2), g = (g6 << 2) | (g6 >> 4), b = (b5 << 3) | (b5 >> 2);
+        let best = 0, bd = 1e12;
+        for (let j = 0; j < n; j++) {
+            const p = pal[j], dr = r - p[0], dg = g - p[1], db = b - p[2];
+            const d = 2 * dr * dr + 4 * dg * dg + 3 * db * db;
+            if (d < bd) { bd = d; best = j; if (!d) break; }
+        }
+        lut[i] = best;
+    }
+    return lut;
+}
+
+// Cuantiza un cuadro; los píxeles sin cambios respecto al anterior pasan a "transparente" (GIF mucho más liviano)
+function quantizeFrame(data, W, H, lut, dither, prev, idx, TR) {
+    let p = 0;
+    for (let y = 0; y < H; y++) {
+        const by = (y & 7) << 3;
+        for (let x = 0; x < W; x++, p++) {
+            const q = p << 2;
+            let r = data[q], g = data[q + 1], b = data[q + 2];
+            if (dither) {
+                const n = BAY[by | (x & 7)];
+                r += n; g += n; b += n;
+                if (r < 0) r = 0; else if (r > 255) r = 255;
+                if (g < 0) g = 0; else if (g > 255) g = 255;
+                if (b < 0) b = 0; else if (b > 255) b = 255;
+            }
+            const ci = lut[((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)];
+            if (prev[p] === ci) idx[p] = TR; else { idx[p] = ci; prev[p] = ci; }
+        }
+    }
+}
+
+// Compresión LZW de GIF (tabla hash, código mínimo 8)
+function lzwEncode(px) {
+    let buf = new Uint8Array(Math.max(1024, px.length >> 1)), len = 0;
+    const put = b => { if (len === buf.length) { const nb = new Uint8Array(len * 2); nb.set(buf); buf = nb; } buf[len++] = b; };
+    const keys = new Int32Array(8192), vals = new Int32Array(8192);
+    const CLEAR = 256, EOI = 257;
+    let nbits = 9, maxcode = 511, free = 258, cur = 0, curBits = 0;
+    const write = code => {
+        cur |= code << curBits; curBits += nbits;
+        while (curBits >= 8) { put(cur & 255); cur >>>= 8; curBits -= 8; }
+    };
+    const out = code => { write(code); if (free > maxcode) { nbits++; maxcode = nbits === 12 ? 4096 : (1 << nbits) - 1; } };
+    const clearBlock = () => { keys.fill(-1); free = 258; write(CLEAR); nbits = 9; maxcode = 511; };
+    keys.fill(-1);
+    write(CLEAR);
+    let ent = px[0];
+    for (let i = 1; i < px.length; i++) {
+        const c = px[i], key = (c << 12) | ent;
+        let h = Math.imul(key, 2654435761) >>> 19, found = false;
+        while (keys[h] !== -1) { if (keys[h] === key) { found = true; break; } h = (h + 1) & 8191; }
+        if (found) { ent = vals[h]; continue; }
+        out(ent); ent = c;
+        if (free < 4096) { keys[h] = key; vals[h] = free++; } else clearBlock();
+    }
+    out(ent); out(EOI);
+    if (curBits > 0) put(cur & 255);
+    return buf.subarray(0, len);
+}
+
+class GifWriter {
+    constructor(w, h, pal) {
+        this.w = w; this.h = h; this.parts = [];
+        const head = new Uint8Array(6 + 7 + 768 + 19);
+        let o = 0;
+        for (const ch of 'GIF89a') head[o++] = ch.charCodeAt(0);
+        head[o++] = w & 255; head[o++] = w >> 8; head[o++] = h & 255; head[o++] = h >> 8;
+        head[o++] = 0xF7; head[o++] = 0; head[o++] = 0;
+        for (let i = 0; i < 256; i++) { const c = pal[i] || [0, 0, 0]; head[o++] = c[0]; head[o++] = c[1]; head[o++] = c[2]; }
+        head.set([0x21, 0xFF, 0x0B], o); o += 3;
+        for (const ch of 'NETSCAPE2.0') head[o++] = ch.charCodeAt(0);
+        head.set([0x03, 0x01, 0x00, 0x00, 0x00], o);
+        this.parts.push(head);
+    }
+    frame(idx, delayCs, transIdx) {
+        const data = lzwEncode(idx), blocks = Math.ceil(data.length / 255);
+        const f = new Uint8Array(8 + 10 + 1 + data.length + blocks + 1);
+        let o = 0;
+        f.set([0x21, 0xF9, 0x04, (1 << 2) | 1, delayCs & 255, delayCs >> 8, transIdx, 0], o); o += 8;
+        f.set([0x2C, 0, 0, 0, 0, this.w & 255, this.w >> 8, this.h & 255, this.h >> 8, 0], o); o += 10;
+        f[o++] = 8;
+        for (let i = 0; i < data.length; i += 255) {
+            const n = Math.min(255, data.length - i);
+            f[o++] = n; f.set(data.subarray(i, i + n), o); o += n;
+        }
+        f[o++] = 0;
+        this.parts.push(f);
+    }
+    finish() { this.parts.push(new Uint8Array([0x3B])); return new Blob(this.parts, { type: 'image/gif' }); }
+}
+/* ==CORE_END== */
+
+/* ---------- Utilidades de interfaz ---------- */
+const $ = s => document.querySelector(s);
+const val = n => document.querySelector(`input[name="${n}"]:checked`).value;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const even = x => { x = Math.round(x); return x + (x & 1); };
+const fmtSize = b => b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB';
+const baseName = n => n.replace(/\.[^.]+$/, '') || 'convertido';
+let lastYield = 0;
+const yieldUI = async () => { if (performance.now() - lastYield > 60) { await sleep(0); lastYield = performance.now(); } };
+
+const HAS_IMG = 'ImageDecoder' in window;
+const HAS_ENC = 'VideoEncoder' in window && 'VideoFrame' in window;
+
+const S = { mode: 'g2v', file: null, url: null, gifBuf: null, info: null, busy: false, cancel: false, resUrl: null };
+
+const el = {
+    drop: $('#drop'), file: $('#fileInput'), title: $('#dropTitle'), hintDrop: $('#dropHint'),
+    preview: $('#preview'), fileinfo: $('#fileinfo'), hint: $('#hint'), go: $('#go'),
+    progress: $('#progress'), bar: $('#bar'), status: $('#status'),
+    result: $('#result'), media: $('#media'), stats: $('#stats'), dl: $('#dl')
+};
+
+function setStatus(msg, kind) { el.status.textContent = msg || ''; el.status.className = kind || ''; }
+function setProgress(p) {
+    if (p == null) { el.progress.hidden = true; el.bar.style.width = '0'; return; }
+    el.progress.hidden = false; el.bar.style.width = Math.round(p * 100) + '%';
+}
+function setBusy(b) {
+    el.go.textContent = b ? 'Cancelar' : 'Convertir';
+    el.go.classList.toggle('stop', b);
+    el.go.disabled = b ? false : !S.info;
+}
+function clearResult() {
+    el.result.hidden = true; el.media.innerHTML = '';
+    if (S.resUrl) { URL.revokeObjectURL(S.resUrl); S.resUrl = null; }
+}
+function updateHint() {
+    if (!S.info) { el.hint.textContent = ''; return; }
+    if (S.mode === 'g2v') {
+        const sc = +val('scale');
+        el.hint.textContent = `Salida: ${even(S.info.w * sc)}×${even(S.info.h * sc)} px a ${val('fps')} fps`;
+    } else {
+        const w = val('gw') === 'orig' ? S.info.w : Math.min(S.info.w, +val('gw'));
+        const h = Math.round(w * S.info.h / S.info.w), fps = +val('gfps');
+        const from = Math.max(0, +$('#from').value || 0), to = Math.min(S.info.d, +$('#to').value || S.info.d);
+        const n = Math.max(0, Math.floor((to - from) * fps));
+        el.hint.textContent = `Salida: ${w}×${h} px · ${n} cuadros`;
+    }
+}
+
+/* ---------- Modo y carga de archivo ---------- */
+function setMode(m) {
+    if (S.busy) return;
+    S.mode = m;
+    $('#tab-g2v').setAttribute('aria-selected', m === 'g2v');
+    $('#tab-v2g').setAttribute('aria-selected', m === 'v2g');
+    $('#opts-g2v').hidden = m !== 'g2v';
+    $('#opts-v2g').hidden = m !== 'v2g';
+    el.file.accept = m === 'g2v' ? 'image/gif' : 'video/*';
+    resetFile();
+}
+function resetFile() {
+    if (S.url) URL.revokeObjectURL(S.url);
+    S.file = null; S.url = null; S.gifBuf = null; S.info = null;
+    el.file.value = '';
+    el.title.textContent = S.mode === 'g2v' ? 'Elegir GIF' : 'Elegir video';
+    el.hintDrop.textContent = 'o arrástralo aquí';
+    el.preview.hidden = true; el.preview.innerHTML = '';
+    el.fileinfo.hidden = true;
+    clearResult(); setStatus(''); setProgress(null); updateHint();
+    el.go.disabled = true;
+    if (S.mode === 'g2v' && !(HAS_IMG && HAS_ENC)) setStatus('Este navegador no soporta WebCodecs. Usa Chrome o Edge actualizados.', 'err');
+}
+
+async function loadFile(f) {
+    if (!f || S.busy) return;
+    const mode = S.mode;
+    resetFile();
+    S.file = f; S.url = URL.createObjectURL(f);
+    el.title.textContent = f.name; el.hintDrop.textContent = 'toca para cambiar';
+
+    try {
+        if (mode === 'g2v') {
+            if (!(HAS_IMG && HAS_ENC)) throw new Error('Este navegador no soporta WebCodecs. Usa Chrome o Edge actualizados.');
+            if (!/gif/i.test(f.type) && !/\.gif$/i.test(f.name)) throw new Error('Ese archivo no es un GIF.');
+            setStatus('Leyendo GIF…');
+            S.gifBuf = await f.arrayBuffer();
+            const dec = new ImageDecoder({ data: S.gifBuf, type: 'image/gif' });
+            await dec.tracks.ready;
+            try { await dec.completed; } catch (e) {}
+            const track = dec.tracks.selectedTrack;
+            const fr = await dec.decode({ frameIndex: 0 });
+            S.info = { w: fr.image.displayWidth, h: fr.image.displayHeight, n: track.frameCount };
+            fr.image.close(); dec.close();
+            el.preview.innerHTML = `<img src="${S.url}" alt="Vista previa del GIF">`;
+            el.fileinfo.textContent = `${S.info.w}×${S.info.h} px · ${S.info.n} cuadros · ${fmtSize(f.size)}`;
+        } else {
+            const v = document.createElement('video');
+            v.src = S.url; v.controls = true; v.muted = true; v.playsInline = true; v.loop = true;
+            await new Promise((res, rej) => { v.onloadedmetadata = res; v.onerror = () => rej(new Error('No se pudo leer ese video.')); });
+            if (!isFinite(v.duration) || !v.videoWidth) throw new Error('No se pudo leer la duración o el tamaño del video.');
+            S.info = { w: v.videoWidth, h: v.videoHeight, d: v.duration };
+            el.preview.innerHTML = ''; el.preview.appendChild(v);
+            $('#from').value = 0; $('#to').value = Math.min(v.duration, 10).toFixed(1);
+            el.fileinfo.textContent = `${S.info.w}×${S.info.h} px · ${v.duration.toFixed(1)} s · ${fmtSize(f.size)}`;
+        }
+        el.preview.hidden = false; el.fileinfo.hidden = false;
+        setStatus(''); updateHint(); el.go.disabled = false;
+    } catch (err) {
+        console.error(err); S.info = null; setStatus(err.message || 'No se pudo cargar el archivo.', 'err');
+    }
+}
+
+/* ---------- GIF → Video (WebCodecs, sin grabar en tiempo real) ---------- */
+async function gifToVideo() {
+    if (!HAS_IMG || !HAS_ENC) throw new Error('Este navegador no soporta WebCodecs. Usa Chrome o Edge actualizados.');
+    const fmt = val('fmt'), fps = +val('fps'), scale = +val('scale'), loops = +val('loops');
+    const bg = $('#bg').value, crisp = $('#crisp').checked;
+    const lib = fmt === 'mp4' ? window.Mp4Muxer : window.WebMMuxer;
+    if (!lib) throw new Error('No se cargó el codificador (¿sin conexión?). Recarga la página e inténtalo otra vez.');
+
+    const dec = new ImageDecoder({ data: S.gifBuf, type: 'image/gif' });
+    await dec.tracks.ready;
+    try { await dec.completed; } catch (e) {}
+    const n = dec.tracks.selectedTrack.frameCount;
+    const W = even(S.info.w * scale), H = even(S.info.h * scale);
+    if (W > 4096 || H > 4096) throw new Error('El tamaño resultante es demasiado grande. Baja la escala.');
+
+    // Bitrate alto: los GIF tienen bordes duros y colores planos que sufren con compresión fuerte
+    const bitrate = Math.round(Math.min(80e6, Math.max(8e6, W * H * fps * 0.3)));
+    const cands = fmt === 'mp4'
+        ? ['avc1.640034', 'avc1.640033', 'avc1.64002A', 'avc1.640028', 'avc1.4D0028', 'avc1.42E01F']
+        : ['vp09.00.40.08', 'vp09.00.51.08', 'vp8'];
+    let cfg = null;
+    for (const codec of cands) {
+        const c = { codec, width: W, height: H, bitrate, framerate: fps, latencyMode: 'quality' };
+        if (fmt === 'mp4') c.avc = { format: 'avc' };
+        try { if ((await VideoEncoder.isConfigSupported(c)).supported) { cfg = c; break; } } catch (e) {}
+    }
+    if (!cfg) throw new Error(`Tu navegador no puede codificar ${fmt.toUpperCase()} a este tamaño. Prueba el otro formato o una escala menor.`);
+
+    const target = new lib.ArrayBufferTarget();
+    const muxer = fmt === 'mp4'
+        ? new lib.Muxer({ target, video: { codec: 'avc', width: W, height: H, frameRate: fps }, fastStart: 'in-memory' })
+        : new lib.Muxer({ target, video: { codec: cfg.codec === 'vp8' ? 'V_VP8' : 'V_VP9', width: W, height: H, frameRate: fps } });
+
+    let encErr = null;
+    const enc = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: e => { encErr = e; } });
+    enc.configure(cfg);
+
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    const cx = cv.getContext('2d', { alpha: false });
+    cx.imageSmoothingEnabled = !crisp; cx.imageSmoothingQuality = 'high';
+
+    setStatus('Codificando…');
+    const tick = 1e6 / fps, total = n * loops, keyEvery = Math.round(fps) * 2;
+    let k = 0, T = 0, done = 0;
+    try {
+        for (let L = 0; L < loops; L++) {
+            for (let i = 0; i < n; i++) {
+                if (S.cancel) throw new Error('cancel');
+                if (encErr) throw encErr;
+                const { image } = await dec.decode({ frameIndex: i });
+                let d = image.duration; // µs
+                if (!d || d <= 10000) d = 100000; // misma regla que los navegadores: ≤10 ms se trata como 100 ms
+                const end = T + d;
+                if (Math.round(k * tick) < end) {
+                    cx.fillStyle = bg; cx.fillRect(0, 0, W, H);
+                    cx.drawImage(image, 0, 0, W, H);
+                    let ts;
+                    while ((ts = Math.round(k * tick)) < end) {
+                        while (enc.encodeQueueSize > 8) await sleep(2);
+                        const vf = new VideoFrame(cv, { timestamp: ts, duration: Math.round(tick) });
+                        enc.encode(vf, { keyFrame: k % keyEvery === 0 });
+                        vf.close(); k++;
+                    }
+                }
+                image.close(); T = end; done++;
+                setProgress(done / total); setStatus(`Codificando… ${Math.round(done / total * 100)}%`);
+                await yieldUI();
+            }
+        }
+        await enc.flush();
+        if (encErr) throw encErr;
+    } finally {
+        try { enc.close(); } catch (e) {}
+        try { dec.close(); } catch (e) {}
+    }
+    muxer.finalize();
+    const mime = fmt === 'mp4' ? 'video/mp4' : 'video/webm';
+    return {
+        blob: new Blob([target.buffer], { type: mime }), kind: 'video', ext: fmt,
+        info: `${W}×${H} px · ${fps} fps · ${(T / 1e6).toFixed(1)} s`
+    };
+}
+
+/* ---------- Video → GIF (paleta global + dithering ordenado) ---------- */
+function seek(v, t) {
+    return new Promise(res => {
+        if (Math.abs(v.currentTime - t) < 0.0005) return res();
+        let to;
+        const done = () => { clearTimeout(to); v.removeEventListener('seeked', done); res(); };
+        v.addEventListener('seeked', done);
+        to = setTimeout(done, 4000);
+        v.currentTime = t;
+    });
+}
+
+async function videoToGif() {
+    const fps = +val('gfps'), wsel = val('gw'), dither = $('#dither').checked;
+    const vid = document.createElement('video');
+    vid.muted = true; vid.playsInline = true; vid.preload = 'auto'; vid.src = S.url;
+    await new Promise((res, rej) => { vid.onloadeddata = res; vid.onerror = () => rej(new Error('No se pudo leer el video.')); });
+
+    const vw = vid.videoWidth, vh = vid.videoHeight, dur = vid.duration;
+    const from = Math.max(0, +$('#from').value || 0), to = Math.min(dur, +$('#to').value || dur);
+    if (to - from < 0.1) throw new Error('El fragmento elegido no es válido.');
+    const W = wsel === 'orig' ? vw : Math.min(vw, +wsel), H = Math.max(1, Math.round(W * vh / vw));
+    const frames = Math.max(1, Math.floor((to - from) * fps));
+    if (frames > 1500) throw new Error('Son demasiados cuadros (máx. 1500). Acorta el fragmento o baja los FPS.');
+
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    const cx = cv.getContext('2d', { willReadFrequently: true });
+    cx.imageSmoothingQuality = 'high';
+    const grab = async t => {
+        await seek(vid, Math.min(t + 0.001, dur));
+        cx.drawImage(vid, 0, 0, W, H);
+        return cx.getImageData(0, 0, W, H).data;
+    };
+
+    // 1) Paleta global desde ~16 cuadros repartidos (colores estables, sin parpadeo)
+    setStatus('Analizando colores…');
+    const hist = new Uint32Array(65536), sr = new Float64Array(65536), sg = new Float64Array(65536), sb = new Float64Array(65536);
+    const sN = Math.min(frames, 16), step = Math.max(1, Math.floor(W * H / 150000));
+    for (let s = 0; s < sN; s++) {
+        if (S.cancel) throw new Error('cancel');
+        const f = Math.floor(s * (frames - 1) / Math.max(1, sN - 1));
+        const d = await grab(from + f / fps);
+        for (let p = 0; p < W * H; p += step) {
+            const q = p << 2, r = d[q], g = d[q + 1], b = d[q + 2];
+            const key = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
+            hist[key]++; sr[key] += r; sg[key] += g; sb[key] += b;
+        }
+        setProgress(0.1 * (s + 1) / sN);
+    }
+    const pal = medianCut(hist, sr, sg, sb, 255);
+    const lut = buildLut(pal);
+    const TR = 255;
+
+    // 2) Un cuadro tras otro: cuantizar y comprimir
+    const gif = new GifWriter(W, H, pal);
+    const prev = new Uint8Array(W * H).fill(255), idx = new Uint8Array(W * H);
+    let lastCs = 0;
+    for (let f = 0; f < frames; f++) {
+        if (S.cancel) throw new Error('cancel');
+        const d = await grab(from + f / fps);
+        quantizeFrame(d, W, H, lut, dither, prev, idx, TR);
+        const cs = Math.round((f + 1) * 100 / fps);   // el retardo se reparte en centésimas sin perder el ritmo real
+        gif.frame(idx, Math.max(2, cs - lastCs), TR);
+        lastCs = cs;
+        setProgress(0.1 + 0.9 * (f + 1) / frames);
+        setStatus(`Cuadro ${f + 1} de ${frames}`);
+        await yieldUI();
+    }
+    vid.removeAttribute('src'); vid.load();
+    return { blob: gif.finish(), kind: 'gif', ext: 'gif', info: `${W}×${H} px · ${fps} fps · ${frames} cuadros` };
+}
+
+/* ---------- Ejecutar ---------- */
+function showResult(r, secs) {
+    clearResult();
+    S.resUrl = URL.createObjectURL(r.blob);
+    el.media.innerHTML = r.kind === 'video'
+        ? `<video src="${S.resUrl}" controls autoplay muted loop playsinline></video>`
+        : `<img src="${S.resUrl}" alt="GIF resultante">`;
+    el.stats.textContent = `${r.info} · ${fmtSize(r.blob.size)}`;
+    el.dl.href = S.resUrl;
+    el.dl.download = `${baseName(S.file.name)}.${r.ext}`;
+    el.dl.textContent = `Descargar ${r.ext.toUpperCase()}`;
+    el.result.hidden = false;
+    setStatus(`Listo en ${secs.toFixed(1)} s`);
+    el.result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+async function run() {
+    if (S.busy) { S.cancel = true; setStatus('Cancelando…'); return; }
+    if (!S.info) return;
+    S.busy = true; S.cancel = false; clearResult(); setBusy(true); setProgress(0);
+    const t0 = performance.now();
+    try {
+        const r = S.mode === 'g2v' ? await gifToVideo() : await videoToGif();
+        showResult(r, (performance.now() - t0) / 1000);
+    } catch (e) {
+        if (e && e.message === 'cancel') setStatus('Cancelado.');
+        else { console.error(e); setStatus((e && e.message) || 'Algo falló en la conversión.', 'err'); }
+    } finally {
+        S.busy = false; setBusy(false); setProgress(null);
+    }
+}
+
+/* ---------- Eventos ---------- */
+$('#tab-g2v').addEventListener('click', () => setMode('g2v'));
+$('#tab-v2g').addEventListener('click', () => setMode('v2g'));
+el.file.addEventListener('change', e => loadFile(e.target.files[0]));
+el.go.addEventListener('click', run);
+['dragenter', 'dragover'].forEach(t => el.drop.addEventListener(t, e => { e.preventDefault(); el.drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach(t => el.drop.addEventListener(t, e => { e.preventDefault(); el.drop.classList.remove('over'); }));
+el.drop.addEventListener('drop', e => loadFile(e.dataTransfer.files[0]));
+document.querySelectorAll('.opts input').forEach(i => i.addEventListener('change', updateHint));
+resetFile();
+</script>
+</body>
+</html>
